@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading Journal</title>
+<style>
+:root{--bg:#faf7f2;--fg:#2a2622;--mut:#7a7268;--line:#ddd5c8;--acc:#3d5a4c}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1a17;--fg:#ece6dc;--mut:#a39a8c;--line:#3a352e;--acc:#8fb5a0}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif;padding:16px;max-width:640px;margin-inline:auto}
+input,button{font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;min-height:44px}
+button{cursor:pointer}button.p{background:var(--acc);color:var(--bg);border-color:var(--acc)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.row input{flex:1;min-width:140px}
+#status{color:var(--mut)}li{margin:6px 0}h2{font-size:1rem;margin:20px 0 4px}
+</style></head>
+<body>
+<h1 data-i18n="app"></h1>
+<p id="status"></p>
+<div class="row"><button type="button" id="lang"></button></div>
+<div id="auth" class="row">
+  <input id="email" type="email" autocomplete="username" data-i18n-ph="email">
+  <input id="pw" type="password" autocomplete="current-password" data-i18n-ph="password">
+  <button type="button" class="p" id="in" data-i18n="signIn"></button>
+  <button type="button" id="up" data-i18n="signUp"></button>
+</div>
+<div class="row"><button type="button" id="out" data-i18n="signOut"></button></div>
+<div class="row"><button type="button" id="addS" data-i18n="addSource"></button><button type="button" id="addN" data-i18n="addNote"></button></div>
+<h2 data-i18n="sources"></h2><ul id="ls"></ul>
+<h2 data-i18n="notes"></h2><ul id="ln"></ul>
+<script type="module">
+import { supabase, signIn, signUp, signOut, currentUser } from "./js/cloud.js";
+import { list, save, initSync, sync } from "./js/store.js";
+import { t, setLang, getLang, apply } from "./js/i18n.js";
+const $ = id => document.getElementById(id);
+let state = "signed-out", msg = "";
+const paintStatus = () => $("status").textContent = t("st." + state) + (msg ? ": " + msg : "");
+async function paint() {
+  const fill = (ul, items, text) => { ul.replaceChildren(...(items.length ? items : [t("empty")]).map(x => Object.assign(document.createElement("li"), { textContent: typeof x === "string" ? x : text(x) }))); };
+  fill($("ls"), await list("sources"), s => s.title);
+  fill($("ln"), await list("notes"), n => n.reflection);
+  $("lang").textContent = t("lang"); apply(); paintStatus();
+  const u = await currentUser(); $("auth").hidden = !!u; $("out").hidden = !u;
+}
+addEventListener("sync-status", e => { ({ state, message: msg } = e.detail); paint(); });
+$("lang").onclick = () => { setLang(getLang() === "vi" ? "en" : "vi"); paint(); };
+const creds = () => [$("email").value.trim(), $("pw").value];
+$("in").onclick = async () => { const { error } = await signIn(...creds()); if (error) { state = "error"; msg = error.message; paintStatus(); } else sync(); };
+$("up").onclick = async () => { const { error } = await signUp(...creds()); msg = error ? error.message : t("checkEmail"); state = error ? "error" : state; paintStatus(); };
+$("out").onclick = async () => { await signOut(); state = "signed-out"; msg = ""; paint(); };
+$("addS").onclick = async () => { await save("sources", { type: "book", status: "reading", title: "Sách thử " + new Date().toLocaleTimeString() }); paint(); };
+$("addN").onclick = async () => { const [s] = await list("sources"); if (!s) return alert(t("needSource")); await save("notes", { source_id: s.id, kind: "insight", reflection: "Ghi chép thử " + new Date().toLocaleTimeString() }); paint(); };
+supabase.auth.onAuthStateChange(() => { paint(); sync(); });
+apply(); paint(); initSync();
+</script>
+</body></html>
