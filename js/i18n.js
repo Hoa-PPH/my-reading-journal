@@ -1,16 +1,36 @@
 // Mọi chữ trên giao diện nằm ở đây. Thêm ngôn ngữ/khóa mới chỉ cần sửa file này.
 const D = {
-  vi: { app: "Nhật ký đọc", email: "Email", password: "Mật khẩu", signIn: "Đăng nhập", signUp: "Tạo tài khoản", signOut: "Đăng xuất",
-    addSource: "Thêm nguồn thử", addNote: "Thêm ghi chép thử", needSource: "Hãy thêm một nguồn trước.", empty: "Chưa có dữ liệu.",
-    "st.signed-out": "Chưa đăng nhập (dữ liệu chỉ lưu trên máy)", "st.offline": "Đang offline, sẽ đồng bộ khi có mạng", "st.syncing": "Đang đồng bộ…", "st.synced": "Đã đồng bộ", "st.error": "Lỗi đồng bộ",
-    checkEmail: "Đã tạo tài khoản. Nếu được yêu cầu, hãy xác nhận email rồi đăng nhập.", sources: "Nguồn", notes: "Ghi chép", lang: "English" },
-  en: { app: "Reading Journal", email: "Email", password: "Password", signIn: "Sign in", signUp: "Create account", signOut: "Sign out",
-    addSource: "Add test source", addNote: "Add test note", needSource: "Add a source first.", empty: "Nothing here yet.",
-    "st.signed-out": "Signed out (data stays on this device)", "st.offline": "Offline, will sync when back online", "st.syncing": "Syncing…", "st.synced": "Synced", "st.error": "Sync error",
-    checkEmail: "Account created. If asked, confirm your email, then sign in.", sources: "Sources", notes: "Notes", lang: "Tiếng Việt" },
+  vi: { app: "Nhật ký đọc", "nav.library": "Kệ sách", "nav.settings": "Cài đặt",
+    "f.all": "Tất cả", "f.reading": "Đang đọc", "f.want": "Muốn đọc", "f.done": "Đã đọc",
+    "status.want": "Muốn đọc", "status.reading": "Đang đọc", "status.done": "Đã đọc",
+    "type.book": "Sách", "type.article": "Bài báo", "type.podcast": "Podcast", "type.other": "Khác",
+    newSource: "Nguồn mới", editSource: "Sửa nguồn", empty: "Chưa có gì ở đây.", notFound: "Không tìm thấy mục này.",
+    "f.type": "Loại", "f.title": "Tên", "f.author": "Tác giả", "f.status": "Trạng thái", "f.purpose": "Vì sao mình đọc?",
+    purposePh: "Mình mong tìm được gì từ đây?", "f.cur": "Trang hiện tại", "f.tot": "Tổng số trang",
+    save: "Lưu", cancel: "Hủy", edit: "Sửa", del: "Xóa", confirmDel: "Xóa mục này? (ghi chép gắn với nó được giữ lại)",
+    youHoped: "Khi bắt đầu, bạn mong tìm được:", purposeLbl: "Vì sao mình đọc", pages: "Trang", notesSoon: "Phần ghi chép sẽ có ở bước tiếp theo.",
+    language: "Ngôn ngữ", lang: "English", account: "Tài khoản", email: "Email", password: "Mật khẩu",
+    signIn: "Đăng nhập", signUp: "Tạo tài khoản", signOut: "Đăng xuất", signedInAs: "Đã đăng nhập:",
+    "st.signed-out": "Chưa đăng nhập (dữ liệu chỉ lưu trên máy)", "st.offline": "Đang offline, sẽ đồng bộ khi có mạng",
+    "st.syncing": "Đang đồng bộ…", "st.synced": "Đã đồng bộ", "st.error": "Lỗi đồng bộ", "st.idle": "",
+    checkEmail: "Đã tạo tài khoản. Nếu được yêu cầu, hãy xác nhận email rồi đăng nhập." },
+  en: { app: "Reading Journal", "nav.library": "Library", "nav.settings": "Settings",
+    "f.all": "All", "f.reading": "Reading", "f.want": "Want to read", "f.done": "Finished",
+    "status.want": "Want to read", "status.reading": "Reading", "status.done": "Finished",
+    "type.book": "Book", "type.article": "Article", "type.podcast": "Podcast", "type.other": "Other",
+    newSource: "New source", editSource: "Edit source", empty: "Nothing here yet.", notFound: "Item not found.",
+    "f.type": "Type", "f.title": "Title", "f.author": "Author", "f.status": "Status", "f.purpose": "Why am I reading this?",
+    purposePh: "What do I hope to find here?", "f.cur": "Current page", "f.tot": "Total pages",
+    save: "Save", cancel: "Cancel", edit: "Edit", del: "Delete", confirmDel: "Delete this item? (notes attached to it are kept)",
+    youHoped: "When you started, you hoped to find:", purposeLbl: "Why I'm reading", pages: "Pages", notesSoon: "Notes arrive in the next step.",
+    language: "Language", lang: "Tiếng Việt", account: "Account", email: "Email", password: "Password",
+    signIn: "Sign in", signUp: "Create account", signOut: "Sign out", signedInAs: "Signed in as:",
+    "st.signed-out": "Signed out (data stays on this device)", "st.offline": "Offline, will sync when back online",
+    "st.syncing": "Syncing…", "st.synced": "Synced", "st.error": "Sync error", "st.idle": "",
+    checkEmail: "Account created. If asked, confirm your email, then sign in." },
 };
 let lang = localStorage.getItem("rj-lang") || "vi";
 export const getLang = () => lang;
 export const t = k => D[lang][k] ?? D.vi[k] ?? k;
 export function setLang(l) { lang = l; localStorage.setItem("rj-lang", l); document.documentElement.lang = l; apply(); }
-export function apply() { document.querySelectorAll("[data-i18n]").forEach(e => e.textContent = t(e.dataset.i18n)); document.querySelectorAll("[data-i18n-ph]").forEach(e => e.placeholder = t(e.dataset.i18nPh)); }
+export function apply() { document.querySelectorAll("[data-i18n]").forEach(e => e.textContent = t(e.dataset.i18n)); }

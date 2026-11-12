@@ -4,51 +4,36 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Reading Journal</title>
 <style>
-:root{--bg:#faf7f2;--fg:#2a2622;--mut:#7a7268;--line:#ddd5c8;--acc:#3d5a4c}
-@media (prefers-color-scheme:dark){:root{--bg:#1c1a17;--fg:#ece6dc;--mut:#a39a8c;--line:#3a352e;--acc:#8fb5a0}}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif;padding:16px;max-width:640px;margin-inline:auto}
-input,button{font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;min-height:44px}
-button{cursor:pointer}button.p{background:var(--acc);color:var(--bg);border-color:var(--acc)}
-.row{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.row input{flex:1;min-width:140px}
-#status{color:var(--mut)}li{margin:6px 0}h2{font-size:1rem;margin:20px 0 4px}
+:root{--bg:#faf6ef;--card:#fffdf8;--fg:#2b2620;--mut:#7d7468;--line:#e2d9c9;--acc:#3f5e4e;--onacc:#fff;--tl:82%}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1916;--card:#25221e;--fg:#ece6dc;--mut:#a69d8f;--line:#3b362f;--acc:#8fb5a0;--onacc:#13201a;--tl:30%}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+header,main{max-width:680px;margin-inline:auto;padding:14px 16px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;border-bottom:1px solid var(--line)}
+.brand{font:700 1.25rem Georgia,"Iowan Old Style",Palatino,serif;color:var(--fg);text-decoration:none;margin-right:auto}
+nav a{color:var(--fg);margin-right:14px;text-decoration:none;padding:8px 0;display:inline-block}
+#status{width:100%;font-size:.8rem;color:var(--mut)}
+h1,h2{font-family:Georgia,"Iowan Old Style",Palatino,serif;line-height:1.25}
+a{color:var(--acc)}.mut{color:var(--mut)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+input,select,textarea,button,.btn{font:inherit;color:inherit;border:1px solid var(--line);border-radius:10px;background:var(--card);padding:10px 12px;min-height:44px}
+button,.btn{cursor:pointer;text-decoration:none;display:inline-flex;align-items:center}
+.p{background:var(--acc);color:var(--onacc);border-color:var(--acc)}
+.chip{border-radius:99px;min-height:38px;padding:6px 14px}.chip.on{background:var(--acc);color:var(--onacc);border-color:var(--acc)}
+.list{list-style:none;padding:0;margin:0}
+.card{display:flex;gap:12px;align-items:center;padding:12px;margin:8px 0;border:1px solid var(--line);border-radius:12px;background:var(--card);color:inherit;text-decoration:none}
+.tile{flex:none;width:44px;height:58px;border-radius:4px 8px 8px 4px;display:grid;place-items:center;font:700 1.3rem Georgia,serif;background:hsl(var(--h) 38% var(--tl));border-left:5px solid hsl(var(--h) 40% 40%)}
+.form label{display:block;margin:12px 0}.form label>span{display:block;font-size:.85rem;color:var(--mut);margin-bottom:4px}
+.form input,.form select,.form textarea{width:100%}
+blockquote{margin:12px 0;padding:8px 14px;border-left:3px solid var(--acc);background:var(--card);border-radius:0 8px 8px 0}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 </style></head>
 <body>
-<h1 data-i18n="app"></h1>
-<p id="status"></p>
-<div class="row"><button type="button" id="lang"></button></div>
-<div id="auth" class="row">
-  <input id="email" type="email" autocomplete="username" data-i18n-ph="email">
-  <input id="pw" type="password" autocomplete="current-password" data-i18n-ph="password">
-  <button type="button" class="p" id="in" data-i18n="signIn"></button>
-  <button type="button" id="up" data-i18n="signUp"></button>
-</div>
-<div class="row"><button type="button" id="out" data-i18n="signOut"></button></div>
-<div class="row"><button type="button" id="addS" data-i18n="addSource"></button><button type="button" id="addN" data-i18n="addNote"></button></div>
-<h2 data-i18n="sources"></h2><ul id="ls"></ul>
-<h2 data-i18n="notes"></h2><ul id="ln"></ul>
-<script type="module">
-import { supabase, signIn, signUp, signOut, currentUser } from "./js/cloud.js";
-import { list, save, initSync, sync } from "./js/store.js";
-import { t, setLang, getLang, apply } from "./js/i18n.js";
-const $ = id => document.getElementById(id);
-let state = "signed-out", msg = "";
-const paintStatus = () => $("status").textContent = t("st." + state) + (msg ? ": " + msg : "");
-async function paint() {
-  const fill = (ul, items, text) => { ul.replaceChildren(...(items.length ? items : [t("empty")]).map(x => Object.assign(document.createElement("li"), { textContent: typeof x === "string" ? x : text(x) }))); };
-  fill($("ls"), await list("sources"), s => s.title);
-  fill($("ln"), await list("notes"), n => n.reflection);
-  $("lang").textContent = t("lang"); apply(); paintStatus();
-  const u = await currentUser(); $("auth").hidden = !!u; $("out").hidden = !u;
-}
-addEventListener("sync-status", e => { ({ state, message: msg } = e.detail); paint(); });
-$("lang").onclick = () => { setLang(getLang() === "vi" ? "en" : "vi"); paint(); };
-const creds = () => [$("email").value.trim(), $("pw").value];
-$("in").onclick = async () => { const { error } = await signIn(...creds()); if (error) { state = "error"; msg = error.message; paintStatus(); } else sync(); };
-$("up").onclick = async () => { const { error } = await signUp(...creds()); msg = error ? error.message : t("checkEmail"); state = error ? "error" : state; paintStatus(); };
-$("out").onclick = async () => { await signOut(); state = "signed-out"; msg = ""; paint(); };
-$("addS").onclick = async () => { await save("sources", { type: "book", status: "reading", title: "Sách thử " + new Date().toLocaleTimeString() }); paint(); };
-$("addN").onclick = async () => { const [s] = await list("sources"); if (!s) return alert(t("needSource")); await save("notes", { source_id: s.id, kind: "insight", reflection: "Ghi chép thử " + new Date().toLocaleTimeString() }); paint(); };
-supabase.auth.onAuthStateChange(() => { paint(); sync(); });
-apply(); paint(); initSync();
-</script>
+<header>
+  <a class="brand" href="#/" data-i18n="app"></a>
+  <nav><a href="#/" data-i18n="nav.library"></a><a href="#/settings" data-i18n="nav.settings"></a></nav>
+  <span id="status"></span>
+</header>
+<main id="app"></main>
+<script type="module" src="js/app.js"></script>
 </body></html>
