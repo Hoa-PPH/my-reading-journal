@@ -1,4 +1,4 @@
-import { supabase, signIn, signUp, signOut, currentUser } from "./cloud.js";
+import { signIn, signUp, signOut, currentUser } from "./cloud.js";
 import { list, get, save, remove, initSync, sync } from "./store.js";
 import { t, setLang, getLang, apply } from "./i18n.js";
 
@@ -10,6 +10,7 @@ const btn = (text, onclick, cls = "") => el("button", { type: "button", classNam
 const link = (text, href, cls = "btn") => el("a", { className: cls, href, textContent: text });
 const sel = (vals, label, cur) => { const s = el("select", {}, vals.map(v => el("option", { value: v, textContent: label(v) }))); s.value = cur; return s; };
 const field = (key, input) => el("label", {}, el("span", { textContent: t(key) }), input);
+const withTimeout = (p, ms = 15000) => Promise.race([p, new Promise(res => setTimeout(() => res({ error: { message: t("timeout") } }), ms))]);
 const hue = s => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
 
 let filter = "all", sync_state = { state: "signed-out", message: "" };
@@ -86,8 +87,8 @@ async function settings() {
     el("h2", { textContent: t("account") }),
     u ? el("div", {}, el("p", { textContent: `${t("signedInAs")} ${u.email}` }), btn(t("signOut"), async () => { await signOut(); sync_state = { state: "signed-out", message: "" }; paintStatus(); render(); }))
       : el("div", { className: "form" }, field("email", email), field("password", pw), el("div", { className: "row" },
-          btn(t("signIn"), async () => { if (fail(await signIn(email.value.trim(), pw.value))) { await sync(); location.hash = "#/"; } }, "p"),
-          btn(t("signUp"), async () => { const r = await signUp(email.value.trim(), pw.value); if (fail(r)) msg.textContent = t("checkEmail"); })), msg));
+          btn(t("signIn"), async () => { if (fail(await withTimeout(signIn(email.value.trim(), pw.value)))) { await sync(); location.hash = "#/"; } }, "p"),
+          btn(t("signUp"), async () => { const r = await withTimeout(signUp(email.value.trim(), pw.value)); if (fail(r)) msg.textContent = t("checkEmail"); })), msg));
 }
 
 const pages = { library, source, form, settings, login: settings };
@@ -103,6 +104,5 @@ addEventListener("sync-status", e => {
   const page = location.hash.split("/")[1];
   if (e.detail.state === "synced" && (!page || page === "source")) render(); // không vẽ lại khi đang gõ ở form/cài đặt
 });
-// Không trả về/await Promise trong callback này: supabase-js sẽ chờ nó trong lúc giữ khóa phiên, còn sync() lại cần khóa đó => treo (deadlock).
-supabase.auth.onAuthStateChange(() => { setTimeout(sync, 0); });
+addEventListener("auth-change", () => { setTimeout(sync, 0); const pg = location.hash.split("/")[1]; if (!pg || pg === "source" || pg === "settings") render(); });
 apply(); paintStatus(); render(); initSync();
