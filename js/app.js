@@ -19,7 +19,9 @@ function paintStatus() { document.getElementById("status").textContent = t("st."
 async function library() {
   const items = (await list("sources")).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   const shown = filter === "all" ? items : items.filter(s => s.status === filter);
+  const u = await currentUser();
   return el("section", {},
+    u ? null : el("p", { className: "mut" }, t("signedOutHint") + " ", link(t("signIn"), "#/settings", "")),
     el("div", { className: "row" },
       ["all", "reading", "want", "done"].map(f => btn(t("f." + f), () => { filter = f; render(); }, "chip" + (f === filter ? " on" : ""))),
       link("+ " + t("newSource"), "#/form", "btn p")),
@@ -88,10 +90,11 @@ async function settings() {
           btn(t("signUp"), async () => { const r = await signUp(email.value.trim(), pw.value); if (fail(r)) msg.textContent = t("checkEmail"); })), msg));
 }
 
-const pages = { library, source, form, settings };
+const pages = { library, source, form, settings, login: settings };
 async function render() {
   const [, page, id] = location.hash.split("/");
-  root.replaceChildren(await (pages[page] || library)(id));
+  try { root.replaceChildren(await (pages[page] || library)(id)); }
+  catch (e) { root.replaceChildren(el("p", { textContent: "Lỗi hiển thị / Render error: " + e.message })); }
   apply();
 }
 addEventListener("hashchange", render);

@@ -13,6 +13,7 @@ const D = {
     signIn: "Đăng nhập", signUp: "Tạo tài khoản", signOut: "Đăng xuất", signedInAs: "Đã đăng nhập:",
     "st.signed-out": "Chưa đăng nhập (dữ liệu chỉ lưu trên máy)", "st.offline": "Đang offline, sẽ đồng bộ khi có mạng",
     "st.syncing": "Đang đồng bộ…", "st.synced": "Đã đồng bộ", "st.error": "Lỗi đồng bộ", "st.idle": "",
+    signedOutHint: "Chưa đăng nhập, dữ liệu chỉ nằm trên máy này.",
     checkEmail: "Đã tạo tài khoản. Nếu được yêu cầu, hãy xác nhận email rồi đăng nhập." },
   en: { app: "Reading Journal", "nav.library": "Library", "nav.settings": "Settings",
     "f.all": "All", "f.reading": "Reading", "f.want": "Want to read", "f.done": "Finished",
@@ -27,6 +28,7 @@ const D = {
     signIn: "Sign in", signUp: "Create account", signOut: "Sign out", signedInAs: "Signed in as:",
     "st.signed-out": "Signed out (data stays on this device)", "st.offline": "Offline, will sync when back online",
     "st.syncing": "Syncing…", "st.synced": "Synced", "st.error": "Sync error", "st.idle": "",
+    signedOutHint: "Not signed in; data stays on this device.",
     checkEmail: "Account created. If asked, confirm your email, then sign in." },
 };
 let lang = localStorage.getItem("rj-lang") || "vi";
