@@ -103,5 +103,6 @@ addEventListener("sync-status", e => {
   const page = location.hash.split("/")[1];
   if (e.detail.state === "synced" && (!page || page === "source")) render(); // không vẽ lại khi đang gõ ở form/cài đặt
 });
-supabase.auth.onAuthStateChange(() => sync());
+// Không trả về/await Promise trong callback này: supabase-js sẽ chờ nó trong lúc giữ khóa phiên, còn sync() lại cần khóa đó => treo (deadlock).
+supabase.auth.onAuthStateChange(() => { setTimeout(sync, 0); });
 apply(); paintStatus(); render(); initSync();
