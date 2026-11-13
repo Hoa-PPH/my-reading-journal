@@ -85,3 +85,10 @@ export async function importRows(n, rows) {
   queueSync();
   return count;
 }
+
+// Xóa vĩnh viễn: xóa trên máy, rồi thử xóa trên máy chủ (nếu lỗi/offline thì bản ẩn trên máy chủ vô hại).
+export async function purge(n, id) {
+  await run(n, "readwrite", s => s.delete(id));
+  const user = await currentUser();
+  if (user && navigator.onLine) await supabase.from(n).delete().eq("id", id);
+}

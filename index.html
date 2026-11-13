@@ -70,6 +70,9 @@ blockquote{margin:8px 0;padding:10px 14px;background:var(--pink-t);border-left:3
  .fab{display:grid;place-items:center;position:fixed;right:16px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:11;width:56px;height:56px;border-radius:50%;background:var(--teal-d);color:#fff;font-size:30px;text-decoration:none;box-shadow:0 8px 18px -6px rgba(10,111,108,.6)}
  .thead,.hm{display:none}.trow{grid-template-columns:40px minmax(0,1fr) auto}
 }
+.split{display:block}.pn{display:none}.trow.sel{background:var(--teal-s)}
+@media (min-width:1280px){.split{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}.pn{display:flex;flex-direction:column;gap:14px;position:sticky;top:20px}
+ .split .thead,.split .hm{display:none}.split .trow{grid-template-columns:40px minmax(0,1fr) auto}}
 </style></head>
 <body>
 <div class="app">

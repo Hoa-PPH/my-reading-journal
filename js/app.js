@@ -1,5 +1,5 @@
 import { signIn, signUp, signOut, currentUser } from "./cloud.js";
-import { list, listAll, get, save, remove, importRows, initSync, sync } from "./store.js";
+import { list, listAll, get, save, remove, purge, importRows, initSync, sync } from "./store.js";
 import { t, setLang, getLang, apply } from "./i18n.js";
 import { PROMPTS } from "./prompts.js";
 
@@ -132,33 +132,67 @@ async function notesPage(mode) {
     el("div", { className: "tools" }, search, el("div", { className: "seg" }, ["all", ...KINDS].map(k => btn(t(k === "all" ? "f.all" : "kind." + k), () => { nkind = k; render(); }, "chip" + (k === nkind ? " on" : ""))))), box);
 }
 
+const wide = () => matchMedia("(min-width: 1280px)").matches;
+let selId = null;
+function panel(s, notes) {
+  const p = pctOf(s), fill = el("i"); if (p != null) fill.style.width = p + "%";
+  const ns = notes.filter(n => n.source_id === s.id).sort(byCreated);
+  return [el("div", { className: "bk" }, tileEl(s), el("div", {}, el("b", { textContent: s.title }), el("br"), el("small", { className: "mut", textContent: [s.author, t("type." + s.type)].filter(Boolean).join(" · ") }))),
+    el("span", { className: "badge b-" + s.status, textContent: t("status." + s.status) }),
+    s.purpose ? el("div", {}, el("h2", { textContent: t("purposeLbl") }), el("blockquote", { textContent: s.purpose })) : null,
+    p == null ? null : el("div", {}, el("h2", { textContent: t("pages") + (s.total_pages ? ` · ${s.current_page ?? 0}/${s.total_pages}` : "") }), el("span", { className: "bar" }, fill)),
+    el("div", {}, el("h2", { textContent: `${t("nav.notes")} (${ns.length})` }), ...(ns.length ? ns.slice(0, 3).map(n => el("div", { className: "nt" }, el("span", { className: "tag k-" + n.kind, textContent: t("kind." + n.kind) }), md(n.reflection))) : [el("p", { className: "mut", textContent: t("noNotes") })])),
+    el("div", { className: "row" }, link("+ " + t("addShort"), "#/note/" + s.id, "btn p"), link(t("open"), "#/source/" + s.id, "btn"), link(t("edit"), "#/form/" + s.id, "btn"))];
+}
 async function library() {
-  const items = await list("sources"), u = await currentUser(), box = el("div", { className: "table" });
+  const [items, notes, u] = await Promise.all([list("sources"), list("notes"), currentUser()]), box = el("div", { className: "table" }), side = el("aside", { className: "card pn" });
+  const showPanel = s => side.replaceChildren(...(s ? panel(s, notes) : [el("p", { className: "mut", textContent: t("pickOne") })]));
+  const pick = s => { selId = s.id; box.querySelectorAll(".trow").forEach(r => r.classList.toggle("sel", r.dataset.id === s.id)); showPanel(s); };
   const thead = () => el("div", { className: "thead" }, el("span"), el("span", { textContent: t("col.title") }), el("span", { className: "hm", textContent: t("col.type") }), el("span", { textContent: t("col.status") }), el("span", { className: "hm", textContent: t("col.progress") }), el("span", { className: "hm", textContent: t("col.updated") }));
   const paint = () => {
     const q = norm(lq);
     const rows = items.filter(s => (filter === "all" || s.status === filter) && (!q || norm(s.title + " " + (s.author || "")).includes(q)));
     rows.sort(sortBy === "title" ? (a, b) => a.title.localeCompare(b.title, getLang()) : sortBy === "progress" ? (a, b) => (pctOf(b) ?? -1) - (pctOf(a) ?? -1) : byUpdated);
+    if (!rows.some(s => s.id === selId)) selId = rows[0]?.id ?? null;
     box.replaceChildren(...(rows.length ? [thead(), ...rows.map(trow)] : [el("div", { className: "empty" }, el("p", { className: "big", textContent: t(items.length ? "noResult" : "emptyTitle") }), el("p", { textContent: items.length ? "" : t("emptyHint") }))]));
+    showPanel(rows.find(s => s.id === selId));
+  };
+  const trow = s => {
+    const tile = tileEl(s), p = pctOf(s), fill = el("i"); if (p != null) fill.style.width = p + "%";
+    const a = el("a", { className: "trow" + (s.id === selId ? " sel" : ""), href: "#/source/" + s.id, onclick: e => { if (wide()) { e.preventDefault(); pick(s); } } }, tile,
+      el("span", { className: "ttl" }, el("b", { textContent: s.title }), el("small", { textContent: s.author || "" })),
+      el("span", { className: "cell hm", textContent: t("type." + s.type) }), el("span", { className: "badge b-" + s.status, textContent: t("status." + s.status) }),
+      el("span", { className: "hm prog" }, p == null ? el("span", { className: "cell", textContent: "—" }) : [el("span", { className: "bar" }, fill), el("small", { textContent: p + "%" })]),
+      el("span", { className: "cell hm", textContent: fmtDate(s.updated_at) }));
+    a.dataset.id = s.id; return a;
   };
   const search = el("input", { type: "search", placeholder: t("searchPh"), value: lq, oninput: e => { lq = e.target.value; paint(); } });
   const sort = sel(["updated", "title", "progress"], x => t("sort." + x), sortBy); sort.onchange = e => { sortBy = e.target.value; paint(); };
   paint();
   return el("section", {}, u ? null : el("p", { className: "hint" }, t("signedOutHint") + " ", link(t("signIn"), "#/settings", "")),
     el("div", { className: "head" }, el("h1", { textContent: t("nav.library") }), link("+ " + t("newSource"), "#/form", "btn p")),
-    el("div", { className: "tools" }, search, sort, el("div", { className: "seg" }, ["all", "reading", "want", "done"].map(f => btn(t("f." + f), () => { filter = f; render(); }, "chip" + (f === filter ? " on" : ""))))), box);
+    el("div", { className: "split" }, el("div", {}, el("div", { className: "tools" }, search, sort, el("div", { className: "seg" }, ["all", "reading", "want", "done"].map(f => btn(t("f." + f), () => { filter = f; render(); }, "chip" + (f === filter ? " on" : ""))))), box), side));
 }
-function trow(s) {
-  const tile = el("span", { className: "tile", textContent: [...s.title][0].toUpperCase() });
-  tile.style.setProperty("--h", hue(s.title));
-  const p = pctOf(s), fill = el("i");
-  if (p != null) fill.style.width = p + "%";
-  return el("a", { className: "trow", href: "#/source/" + s.id }, tile,
-    el("span", { className: "ttl" }, el("b", { textContent: s.title }), el("small", { textContent: s.author || "" })),
-    el("span", { className: "cell hm", textContent: t("type." + s.type) }),
-    el("span", { className: "badge b-" + s.status, textContent: t("status." + s.status) }),
-    el("span", { className: "hm prog" }, p == null ? el("span", { className: "cell", textContent: "—" }) : [el("span", { className: "bar" }, fill), el("small", { textContent: p + "%" })]),
-    el("span", { className: "cell hm", textContent: fmtDate(s.updated_at) }));
+
+const purgeItem = async (n, r) => { // gỡ liên kết ghi chép trước, tránh lỗi khóa ngoại khi đồng bộ
+  if (n === "sources") for (const x of (await listAll("notes")).filter(x => x.source_id === r.id)) await save("notes", { ...x, source_id: null });
+  await purge(n, r.id);
+};
+async function autoPurge() { // mục đã xóa quá 30 ngày và đã đồng bộ thì xóa hẳn
+  const cut = Date.now() - 30 * 864e5;
+  for (const n of ["notes", "sources"]) for (const r of await listAll(n)) if (r.deleted_at && !r.dirty && Date.parse(r.deleted_at) < cut) await purgeItem(n, r);
+}
+async function trash() {
+  const [ss, ns] = await Promise.all([listAll("sources"), listAll("notes")]);
+  const items = [...ss.filter(r => r.deleted_at).map(r => ({ n: "sources", r })), ...ns.filter(r => r.deleted_at).map(r => ({ n: "notes", r }))].sort((a, b) => b.r.deleted_at.localeCompare(a.r.deleted_at));
+  const left = r => Math.max(0, 30 - Math.floor((Date.now() - Date.parse(r.deleted_at)) / 864e5));
+  const row = ({ n, r }) => el("div", { className: "nt" },
+    el("div", { className: "meta" }, el("span", { className: "tag " + (n === "sources" ? "k-question" : "k-insight"), textContent: t(n === "sources" ? "nav.library" : "nav.notes") }), el("span", { className: "mut", textContent: `${fmtDate(r.deleted_at)} · ${t("daysLeft").replace("{n}", left(r))}` })),
+    el("p", { textContent: n === "sources" ? r.title : r.reflection.slice(0, 120) }),
+    el("div", { className: "row" }, btn(t("restore"), async () => { await save(n, { ...r, deleted_at: null }); render(); }, "link"),
+      btn(t("deleteForever"), async () => { if (confirm(t("confirmForever"))) { await purgeItem(n, r); render(); } }, "link")));
+  return el("section", { className: "narrow" }, el("h1", { textContent: t("trash") }), el("p", { className: "mut", textContent: t("trashHint") }),
+    items.length ? el("div", { className: "card" }, items.map(row)) : el("div", { className: "empty" }, el("p", { className: "big", textContent: t("trashEmpty") })));
 }
 
 async function source(id) {
@@ -230,6 +264,7 @@ function cleanBackup(d) {
   return { sources, notes };
 }
 async function dataPanel() {
+  const tc = [...(await listAll("sources")), ...(await listAll("notes"))].filter(r => r.deleted_at).length;
   const msg = el("p", { className: "mut" }), le = localStorage.getItem("rj-last-export"), stamp = new Date().toISOString().slice(0, 10);
   const download = (name, text, type) => { const a = el("a", { href: URL.createObjectURL(new Blob([text], { type })), download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
   const done = () => { localStorage.setItem("rj-last-export", new Date().toISOString()); render(); };
@@ -253,12 +288,12 @@ async function dataPanel() {
     file.value = "";
   };
   return el("div", {}, el("h2", { textContent: t("dataTitle") }), el("p", { className: "mut", textContent: t("dataHint") }),
-    el("div", { className: "row" }, btn(t("exportJson"), exportJson, "p"), btn(t("exportMd"), exportMd), btn(t("importJson"), () => file.click()), file),
+    el("div", { className: "row" }, btn(t("exportJson"), exportJson, "p"), btn(t("exportMd"), exportMd), btn(t("importJson"), () => file.click()), link(`${t("trash")} (${tc})`, "#/trash", "btn"), file),
     el("p", { className: "mut", textContent: `${t("lastExport")}: ${le ? fmtDate(le) : t("never")}` }), msg);
 }
 async function settings() { const sec = await settingsBase(); sec.append(await dataPanel()); return sec; }
-const pages = { home, library, source, form, settings, login: settings, note: notePage, editnote: noteEdit, notes: () => notesPage(), inbox: () => notesPage("inbox") };
-const NAVMAP = { home: "#/", note: "#/", editnote: "#/notes", library: "#/library", source: "#/library", form: "#/library", notes: "#/notes", inbox: "#/inbox", settings: "#/settings", login: "#/settings" };
+const pages = { home, library, source, form, settings, login: settings, note: notePage, editnote: noteEdit, trash, notes: () => notesPage(), inbox: () => notesPage("inbox") };
+const NAVMAP = { home: "#/", note: "#/", editnote: "#/notes", trash: "#/settings", library: "#/library", source: "#/library", form: "#/library", notes: "#/notes", inbox: "#/inbox", settings: "#/settings", login: "#/settings" };
 async function render() {
   const [, page, id] = location.hash.split("/");
   try { root.replaceChildren(await (pages[page] || home)(id)); }
@@ -281,4 +316,4 @@ addEventListener("sync-status", e => {
 addEventListener("auth-change", () => { setTimeout(sync, 0); const pg = location.hash.split("/")[1]; if (!["form", "note"].includes(pg)) softRender(); });
 document.getElementById("gsearch").onsubmit = e => { e.preventDefault(); query = document.getElementById("gq").value.trim(); if (location.hash === "#/notes") render(); else location.hash = "#/notes"; };
 document.querySelectorAll("[data-lang]").forEach(b => b.onclick = () => { setLang(b.dataset.lang); paintStatus(); render(); });
-apply(); paintStatus(); render(); initSync();
+apply(); paintStatus(); render(); initSync(); setTimeout(autoPurge, 5000);
