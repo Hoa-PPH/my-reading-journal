@@ -71,3 +71,17 @@ export function initSync() {
   document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && sync());
   sync();
 }
+
+// Dùng cho xuất/nhập dữ liệu. importRows: bản ghi nào mới hơn bản trên máy mới được ghi đè; đánh dấu dirty để tự đồng bộ lên.
+export const listAll = n => getAll(n);
+export async function importRows(n, rows) {
+  let count = 0;
+  for (const r of rows) {
+    const cur = await get(n, r.id);
+    if (cur && cur.updated_at >= r.updated_at) continue;
+    await run(n, "readwrite", s => s.put({ ...r, dirty: 1 }));
+    count++;
+  }
+  queueSync();
+  return count;
+}

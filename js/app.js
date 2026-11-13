@@ -1,5 +1,5 @@
 import { signIn, signUp, signOut, currentUser } from "./cloud.js";
-import { list, get, save, remove, initSync, sync } from "./store.js";
+import { list, listAll, get, save, remove, importRows, initSync, sync } from "./store.js";
 import { t, setLang, getLang, apply } from "./i18n.js";
 import { PROMPTS } from "./prompts.js";
 
@@ -50,9 +50,9 @@ function md(text) {
   return box;
 }
 
-async function composer({ sourceId = null, after = render } = {}) {
+async function composer({ sourceId = null, after = render, note = null } = {}) {
   const sources = (await list("sources")).sort((a, b) => (b.status === "reading") - (a.status === "reading") || byUpdated(a, b));
-  const d = loadDraft(), ids = new Set(sources.map(s => s.id));
+  const d = note ? { text: note.reflection, quote: note.quote, page: note.page, kind: note.kind, source_id: note.source_id, pi: /^p\d+$/.test(note.prompt_key || "") ? +note.prompt_key.slice(1) : null } : loadDraft(), ids = new Set(sources.map(s => s.id));
   let kind = KINDS.includes(d.kind) ? d.kind : "insight", pi = Number.isInteger(d.pi) ? d.pi : pickPrompt(-1);
   const first = [sourceId, d.source_id, localStorage.getItem("rj-last-source"), sources.find(s => s.status === "reading")?.id].find(x => x && ids.has(x)) ?? "";
   const q = el("p", { className: "q", textContent: PROMPTS[getLang()][pi] });
@@ -61,14 +61,14 @@ async function composer({ sourceId = null, after = render } = {}) {
   const page = el("input", { type: "number", min: 0, value: d.page || "", placeholder: t("pageLbl") });
   const src = el("select", {}, [el("option", { value: "", textContent: t("inbox") }), ...sources.map(s => el("option", { value: s.id, textContent: s.title }))]); src.value = first;
   const info = el("small", { className: "mut" });
-  const persist = () => { saveDraft({ text: text.value, quote: quote.value, page: page.value, kind, source_id: src.value, pi }); info.textContent = t("draftSaved"); };
+  const persist = () => { if (note) return; saveDraft({ text: text.value, quote: quote.value, page: page.value, kind, source_id: src.value, pi }); info.textContent = t("draftSaved"); };
   const chips = el("div", { className: "seg" }, KINDS.map(k => btn(t("kind." + k), () => { kind = k; chips.querySelectorAll(".chip").forEach((c, i) => c.classList.toggle("on", KINDS[i] === k)); persist(); }, "chip" + (k === kind ? " on" : ""))));
   [text, quote, page].forEach(x => x.oninput = persist); src.onchange = persist;
   const submit = async () => {
     const reflection = text.value.trim();
     if (!reflection) { info.textContent = t("needText"); text.focus(); return; }
-    await save("notes", { source_id: src.value || null, kind, reflection, quote: quote.value.trim() || null, page: page.value === "" ? null : Math.max(0, parseInt(page.value, 10) || 0), prompt_key: "p" + pi });
-    localStorage.setItem("rj-last-source", src.value); localStorage.removeItem(DRAFT);
+    await save("notes", { ...(note || {}), source_id: src.value || null, kind, reflection, quote: quote.value.trim() || null, page: page.value === "" ? null : Math.max(0, parseInt(page.value, 10) || 0), prompt_key: note ? note.prompt_key : "p" + pi });
+    if (!note) { localStorage.setItem("rj-last-source", src.value); localStorage.removeItem(DRAFT); }
     after();
   };
   text.onkeydown = e => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") submit(); };
@@ -87,12 +87,13 @@ function noteItem(n, byId, sources = null) {
       el("span", { className: "mut", textContent: [n.page ? t("pageShort") + " " + n.page : null, fmtDate(n.created_at)].filter(Boolean).join(" · ") })),
     n.quote ? el("blockquote", { textContent: n.quote }) : null, md(n.reflection),
     el("div", { className: "row" }, sources ? assignSel(n, sources) : null,
-      btn(t("del"), async () => { if (confirm(t("confirmDelNote"))) { await remove("notes", n.id); render(); } }, "link")));
+      link(t("edit"), "#/editnote/" + n.id, "link"), btn(t("del"), async () => { if (confirm(t("confirmDelNote"))) { await remove("notes", n.id); render(); } }, "link")));
 }
 
 async function home() {
   const [sources, notes, u] = await Promise.all([list("sources"), list("notes"), currentUser()]), byId = idMap(sources);
   const reading = sources.filter(s => s.status === "reading").sort(byUpdated);
+  const stale = (sources.length + notes.length) > 0 && Date.now() - Date.parse(localStorage.getItem("rj-last-export") || "1970-01-01") > 12096e5; // 14 ngày
   const week = notes.filter(n => Date.now() - Date.parse(n.created_at) < 6048e5).length, inbox = notes.filter(n => !n.source_id).length;
   const h = new Date().getHours(), date = new Date().toLocaleDateString(getLang() === "vi" ? "vi-VN" : "en-GB", { weekday: "long", day: "numeric", month: "numeric" });
   const bk = s => { const p = pctOf(s), fill = el("i"); if (p != null) fill.style.width = p + "%";
@@ -100,6 +101,7 @@ async function home() {
   const row = (a, b, href) => el("a", { href }, el("span", { textContent: a }), el("b", { textContent: b }));
   return el("section", {},
     u ? null : el("p", { className: "hint" }, t("signedOutHint") + " ", link(t("signIn"), "#/settings", "")),
+    stale ? el("p", { className: "hint" }, t("backupDue") + " ", link(t("backupNow"), "#/settings", "")) : null,
     el("div", { className: "head" }, el("div", {}, el("h1", { textContent: t(h < 12 ? "greet.am" : h < 18 ? "greet.pm" : "greet.eve") }), el("span", { className: "mut", textContent: date }))),
     el("div", { className: "card compose" }, await composer()),
     el("div", { className: "cols" },
@@ -110,6 +112,12 @@ async function home() {
         row(t("nav.inbox"), `${inbox} ${t("unsorted")}`, "#/inbox"), row(t("thisWeek"), `${week} ${t("stat.notes").toLowerCase()}`, "#/notes"), el("a", { href: "#/" }, el("span", { textContent: t("review") }), el("span", { className: "mut", textContent: t("soon") })))));
 }
 
+async function noteEdit(id) {
+  const n = await get("notes", id);
+  if (!n || n.deleted_at) return el("p", { textContent: t("notFound") });
+  const back = () => { location.hash = n.source_id ? "#/source/" + n.source_id : "#/notes"; };
+  return el("section", { className: "narrow" }, el("h1", { textContent: t("editNote") }), el("div", { className: "card compose", style: "margin-top:16px" }, await composer({ note: n, after: back })), el("div", { className: "row" }, link(t("cancel"), "#/notes", "link")));
+}
 async function notePage(id) { return el("section", { className: "narrow" }, el("h1", { textContent: t("newNote") }), el("div", { className: "card compose", style: "margin-top:16px" }, await composer({ sourceId: id || null, after: () => { location.hash = id ? "#/source/" + id : "#/"; } }))); }
 
 async function notesPage(mode) {
@@ -195,7 +203,7 @@ async function form(id) {
   return f;
 }
 
-async function settings() {
+async function settingsBase() {
   const u = await currentUser(), msg = el("p", { className: "mut" });
   const email = el("input", { type: "email", autocomplete: "username", placeholder: t("email") });
   const pw = el("input", { type: "password", autocomplete: "current-password", placeholder: t("password") });
@@ -209,8 +217,48 @@ async function settings() {
           btn(t("signUp"), async () => { const r = await withTimeout(signUp(email.value.trim(), pw.value)); if (fail(r)) msg.textContent = t("checkEmail"); })), msg));
 }
 
-const pages = { home, library, source, form, settings, login: settings, note: notePage, notes: () => notesPage(), inbox: () => notesPage("inbox") };
-const NAVMAP = { home: "#/", note: "#/", library: "#/library", source: "#/library", form: "#/library", notes: "#/notes", inbox: "#/inbox", settings: "#/settings", login: "#/settings" };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SRC = ["id", "type", "title", "author", "status", "purpose", "started_at", "finished_at", "current_page", "total_pages", "created_at", "updated_at", "deleted_at"];
+const NOTE = ["id", "source_id", "kind", "reflection", "quote", "page", "prompt_key", "created_at", "updated_at", "deleted_at"];
+// Kiểm tra nghiêm: bản ghi sai kiểu mà lọt vào sẽ làm đồng bộ lỗi mãi mãi.
+function cleanBackup(d) {
+  if (!d || d.app !== "reading-journal" || !Array.isArray(d.sources) || !Array.isArray(d.notes)) throw new Error("format");
+  const pick = (r, keys) => Object.fromEntries(keys.filter(k => r && r[k] !== undefined).map(k => [k, r[k]]));
+  const date = x => typeof x === "string" && !isNaN(Date.parse(x)), str = v => v == null || typeof v === "string", int = v => v == null || Number.isInteger(v);
+  const sources = d.sources.map(r => pick(r, SRC)).filter(r => UUID.test(r.id) && typeof r.title === "string" && r.title.trim() && ["book", "article", "podcast", "other"].includes(r.type) && ["want", "reading", "done"].includes(r.status) && date(r.created_at) && date(r.updated_at) && [r.author, r.purpose, r.started_at, r.finished_at, r.deleted_at].every(str) && int(r.current_page) && int(r.total_pages));
+  const notes = d.notes.map(r => pick(r, NOTE)).filter(r => UUID.test(r.id) && typeof r.reflection === "string" && r.reflection.trim() && KINDS.includes(r.kind) && date(r.created_at) && date(r.updated_at) && (r.source_id == null || UUID.test(r.source_id)) && [r.quote, r.prompt_key, r.deleted_at].every(str) && int(r.page));
+  return { sources, notes };
+}
+async function dataPanel() {
+  const msg = el("p", { className: "mut" }), le = localStorage.getItem("rj-last-export"), stamp = new Date().toISOString().slice(0, 10);
+  const download = (name, text, type) => { const a = el("a", { href: URL.createObjectURL(new Blob([text], { type })), download: name }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
+  const done = () => { localStorage.setItem("rj-last-export", new Date().toISOString()); render(); };
+  const exportJson = async () => { download(`reading-journal-${stamp}.json`, JSON.stringify({ app: "reading-journal", v: 1, exported_at: new Date().toISOString(), sources: await listAll("sources"), notes: await listAll("notes") }, null, 2), "application/json"); done(); };
+  const exportMd = async () => {
+    const [ss, ns] = await Promise.all([list("sources"), list("notes")]), asc = (a, b) => a.created_at.localeCompare(b.created_at);
+    const fmt = n => `- **${t("kind." + n.kind)}**${n.page ? ` (${t("pageShort")} ${n.page})` : ""} · ${fmtDate(n.created_at)}\n` + (n.quote ? n.quote.split("\n").map(l => "  > " + l).join("\n") + "\n" : "") + n.reflection.split("\n").map(l => "  " + l).join("\n");
+    const out = [`# ${t("app")}\n`], ids = new Set(ss.map(s => s.id));
+    for (const s of ss.sort((a, b) => a.title.localeCompare(b.title))) { out.push(`## ${s.title}\n${[s.author, t("type." + s.type), t("status." + s.status)].filter(Boolean).join(" · ")}\n`); if (s.purpose) out.push(`> ${t("purposeLbl")}: ${s.purpose}\n`); out.push(...ns.filter(n => n.source_id === s.id).sort(asc).map(fmt), ""); }
+    const loose = ns.filter(n => !ids.has(n.source_id)).sort(asc); if (loose.length) out.push(`## ${t("inbox")}\n`, ...loose.map(fmt));
+    download(`reading-journal-${stamp}.md`, out.join("\n"), "text/markdown"); done();
+  };
+  const file = el("input", { type: "file", accept: "application/json,.json", hidden: true });
+  file.onchange = async () => {
+    try {
+      const rows = cleanBackup(JSON.parse(await file.files[0].text())), known = new Set(rows.sources.map(r => r.id));
+      for (const n of rows.notes) if (n.source_id && !known.has(n.source_id) && !(await get("sources", n.source_id))) n.source_id = null; // tránh lỗi khóa ngoại khi đồng bộ
+      const a = await importRows("sources", rows.sources), b = await importRows("notes", rows.notes);
+      msg.textContent = `${t("imported")}: ${a} ${t("nav.library").toLowerCase()}, ${b} ${t("nav.notes").toLowerCase()}`;
+    } catch (e) { msg.textContent = `${t("importFail")} ${e.message}`; }
+    file.value = "";
+  };
+  return el("div", {}, el("h2", { textContent: t("dataTitle") }), el("p", { className: "mut", textContent: t("dataHint") }),
+    el("div", { className: "row" }, btn(t("exportJson"), exportJson, "p"), btn(t("exportMd"), exportMd), btn(t("importJson"), () => file.click()), file),
+    el("p", { className: "mut", textContent: `${t("lastExport")}: ${le ? fmtDate(le) : t("never")}` }), msg);
+}
+async function settings() { const sec = await settingsBase(); sec.append(await dataPanel()); return sec; }
+const pages = { home, library, source, form, settings, login: settings, note: notePage, editnote: noteEdit, notes: () => notesPage(), inbox: () => notesPage("inbox") };
+const NAVMAP = { home: "#/", note: "#/", editnote: "#/notes", library: "#/library", source: "#/library", form: "#/library", notes: "#/notes", inbox: "#/inbox", settings: "#/settings", login: "#/settings" };
 async function render() {
   const [, page, id] = location.hash.split("/");
   try { root.replaceChildren(await (pages[page] || home)(id)); }
