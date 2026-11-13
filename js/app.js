@@ -11,8 +11,6 @@ const link = (text, href, cls = "btn") => el("a", { className: cls, href, textCo
 const sel = (vals, label, cur) => { const s = el("select", {}, vals.map(v => el("option", { value: v, textContent: label(v) }))); s.value = cur; return s; };
 const field = (key, input) => el("label", {}, el("span", { textContent: t(key) }), input);
 const withTimeout = (p, ms = 15000) => Promise.race([p, new Promise(res => setTimeout(() => res({ error: { message: t("timeout") } }), ms))]);
-const SVGNS = "http://www.w3.org/2000/svg";
-const sv = (tag, attrs = {}, ...kids) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); e.append(...kids.flat().filter(x => x != null)); return e; };
 const HUES = [174, 186, 340, 350, 26, 34]; // chỉ dùng tông lam ngọc, hồng, nâu
 const hue = s => HUES[[...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % HUES.length];
 const norm = x => (x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toLowerCase();
@@ -23,43 +21,10 @@ let query = "", sortBy = "updated", filter = "all", sync_state = { state: "signe
 
 function paintStatus() { const st = document.getElementById("status"); st.dataset.state = sync_state.state; st.textContent = t("st." + sync_state.state) + (sync_state.message ? ": " + sync_state.message : ""); }
 
-const blk = (title, color, ...kids) => { const b = el("section", { className: "blk" }, el("h2", { className: "tt", textContent: title }), ...kids); b.style.setProperty("--c", color); return b; };
-
-function bubbleMap(items, notes) {
-  const cnt = st => items.filter(x => x.status === st).length, C = { cx: 80, cy: 100, r: 42 };
-  const sats = [{ cx: 205, cy: 40, st: "reading", fill: "var(--teal-s)" }, { cx: 250, cy: 112, st: "want", fill: "var(--brown-s)" }, { cx: 150, cy: 158, st: "done", fill: "var(--pink-s)" }];
-  const txt = (x, y, size, weight, fill, str) => sv("text", { x, y, "text-anchor": "middle", style: `font-size:${size}px;font-weight:${weight};fill:${fill}` }, String(str));
-  return sv("svg", { viewBox: "0 0 300 200", class: "map", role: "img", "aria-label": t("blk.map") },
-    sats.map(n => sv("line", { x1: C.cx, y1: C.cy, x2: n.cx, y2: n.cy, style: "stroke:var(--out);stroke-width:2" })),
-    sv("circle", { cx: C.cx, cy: C.cy, r: C.r, style: "fill:var(--teal);stroke:var(--out);stroke-width:2" }),
-    txt(C.cx, C.cy + 4, 26, 700, "#fff", items.length), txt(C.cx, C.cy + 22, 10, 500, "#fff", t("stat.total")),
-    sats.map(n => [sv("circle", { cx: n.cx, cy: n.cy, r: 24, style: `fill:${n.fill};stroke:var(--out);stroke-width:2` }),
-      txt(n.cx, n.cy + 6, 18, 700, "var(--ink)", cnt(n.st)), txt(n.cx, n.cy + 40, 10.5, 500, "var(--mut)", t("f." + n.st))]));
-}
-function timeline(items) {
-  const recent = [...items].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 5).reverse();
-  return el("div", { className: "tl" }, recent.map(s => {
-    const dot = el("a", { className: "dot", href: "#/source/" + s.id, title: s.title, textContent: [...s.title][0].toUpperCase() });
-    dot.style.setProperty("--h", hue(s.title));
-    return el("div", { className: "tl-i" }, dot, el("small", { textContent: s.title }), el("small", { className: "mut", textContent: fmtDate(s.started_at || s.created_at) }));
-  }));
-}
-function nowReading(items) {
-  const s = items.filter(x => x.status === "reading").sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
-  if (!s) return el("div", { className: "empty" }, el("p", { className: "big", textContent: t("noReading") }), link("+ " + t("newSource"), "#/form", "btn p"));
-  const p = pctOf(s) ?? 0, C = 2 * Math.PI * 42;
-  const ring = sv("svg", { viewBox: "0 0 100 100", class: "ring" },
-    sv("circle", { cx: 50, cy: 50, r: 42, style: "fill:var(--paper);stroke:var(--line);stroke-width:10" }),
-    sv("circle", { cx: 50, cy: 50, r: 42, transform: "rotate(-90 50 50)", "stroke-linecap": "round", "stroke-dasharray": C, "stroke-dashoffset": C * (1 - p / 100), style: "fill:none;stroke:var(--teal);stroke-width:10" }),
-    sv("text", { x: 50, y: 57, "text-anchor": "middle", style: "font-size:22px;font-weight:700;fill:var(--ink)" }, p + "%"));
-  const pages = s.total_pages || s.current_page ? `${t("pages")}: ${s.current_page ?? 0}${s.total_pages ? " / " + s.total_pages : ""}` : null;
-  return el("a", { className: "now", href: "#/source/" + s.id }, ring,
-    el("div", { className: "lines" }, el("b", { textContent: s.title }), s.author ? el("span", { className: "mut", textContent: s.author }) : null,
-      s.purpose ? el("em", { textContent: "“" + s.purpose + "”" }) : null, pages ? el("span", { className: "mut", textContent: pages }) : null));
-}
-
 async function library() {
   const items = await list("sources"), notes = await list("notes"), u = await currentUser();
+  const stat = (n, label, c) => { const d = el("div", { className: "stat" }, el("b", { textContent: n }), el("span", { textContent: label })); d.style.setProperty("--c", c); return d; };
+  const count = st => items.filter(x => x.status === st).length;
   const box = el("div", { className: "table" });
   const thead = () => el("div", { className: "thead" }, el("span"), el("span", { textContent: t("col.title") }), el("span", { className: "hm", textContent: t("col.type") }), el("span", { textContent: t("col.status") }), el("span", { className: "hm", textContent: t("col.progress") }), el("span", { className: "hm", textContent: t("col.updated") }));
   const paint = () => {
@@ -73,14 +38,12 @@ async function library() {
   const sort = sel(["updated", "title", "progress"], x => t("sort." + x), sortBy);
   sort.onchange = e => { sortBy = e.target.value; paint(); };
   paint();
-  const sum = `${items.length} ${t("stat.total").toLowerCase()} · ${notes.length} ${t("stat.notes").toLowerCase()}`;
   return el("section", {},
     u ? null : el("p", { className: "hint" }, t("signedOutHint") + " ", link(t("signIn"), "#/settings", "")),
-    el("div", { className: "banner" }, el("div", {}, el("h1", { textContent: t("nav.library") }), el("p", { textContent: sum })), link("+ " + t("newSource"), "#/form", "btn alt")),
-    blk(t("blk.map"), "var(--teal-d)", bubbleMap(items, notes)),
-    items.length ? blk(t("blk.timeline"), "var(--brown-d)", timeline(items)) : null,
-    blk(t("f.reading"), "var(--pink-d)", nowReading(items)),
-    blk(t("blk.all"), "var(--teal-d)", el("div", { className: "tools" }, search, sort, el("div", { className: "seg" }, ["all", "reading", "want", "done"].map(f => btn(t("f." + f), () => { filter = f; render(); }, "chip" + (f === filter ? " on" : ""))))), box));
+    el("div", { className: "head" }, el("h1", { textContent: t("nav.library") }), link("+ " + t("newSource"), "#/form", "btn p")),
+    el("div", { className: "stats" }, stat(items.length, t("stat.total"), "var(--brown)"), stat(count("reading"), t("f.reading"), "var(--teal)"), stat(count("done"), t("f.done"), "var(--pink)"), stat(notes.length, t("stat.notes"), "var(--teal-d)")),
+    el("div", { className: "tools" }, search, sort, el("div", { className: "seg" }, ["all", "reading", "want", "done"].map(f => btn(t("f." + f), () => { filter = f; render(); }, "chip" + (f === filter ? " on" : ""))))),
+    box);
 }
 function trow(s) {
   const tile = el("span", { className: "tile", textContent: [...s.title][0].toUpperCase() });
