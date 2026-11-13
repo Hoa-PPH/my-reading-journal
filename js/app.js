@@ -15,25 +15,31 @@ const hue = s => [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
 
 let filter = "all", sync_state = { state: "signed-out", message: "" };
 
-function paintStatus() { document.getElementById("status").textContent = t("st." + sync_state.state) + (sync_state.message ? ": " + sync_state.message : ""); }
+function paintStatus() { const st = document.getElementById("status"); st.dataset.state = sync_state.state; st.textContent = t("st." + sync_state.state) + (sync_state.message ? ": " + sync_state.message : ""); }
 
 async function library() {
   const items = (await list("sources")).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   const shown = filter === "all" ? items : items.filter(s => s.status === filter);
   const u = await currentUser();
+  const add = link("+ " + t("newSource"), "#/form", "btn p");
   return el("section", {},
-    u ? null : el("p", { className: "mut" }, t("signedOutHint") + " ", link(t("signIn"), "#/settings", "")),
-    el("div", { className: "row" },
-      ["all", "reading", "want", "done"].map(f => btn(t("f." + f), () => { filter = f; render(); }, "chip" + (f === filter ? " on" : ""))),
-      link("+ " + t("newSource"), "#/form", "btn p")),
-    shown.length ? el("ul", { className: "list" }, shown.map(card)) : el("p", { className: "mut", textContent: t("empty") }));
+    u ? null : el("p", { className: "hint" }, t("signedOutHint") + " ", link(t("signIn"), "#/settings", "")),
+    el("div", { className: "head" }, el("h1", { textContent: t("nav.library") }), add),
+    el("div", { className: "seg" }, ["all", "reading", "want", "done"].map(f => btn(t("f." + f), () => { filter = f; render(); }, "chip" + (f === filter ? " on" : "")))),
+    shown.length ? el("ul", { className: "list" }, shown.map(card))
+      : el("div", { className: "empty" }, el("p", { className: "big", textContent: t("emptyTitle") }), el("p", { textContent: t("emptyHint") })));
 }
 function card(s) {
   const tile = el("span", { className: "tile", textContent: [...s.title][0].toUpperCase() });
   tile.style.setProperty("--h", hue(s.title));
+  const pct = s.total_pages && s.status === "reading" ? Math.min(100, Math.round(100 * (s.current_page || 0) / s.total_pages)) : null;
+  const bar = pct == null ? null : el("span", { className: "bar" }, el("i"));
+  if (bar) bar.firstChild.style.width = pct + "%";
   return el("li", {}, el("a", { className: "card", href: "#/source/" + s.id }, tile,
-    el("span", {}, el("b", { textContent: s.title }), el("br"),
-      el("small", { className: "mut", textContent: [s.author, t("type." + s.type), t("status." + s.status)].filter(Boolean).join(" · ") }))));
+    el("span", { className: "info" },
+      el("b", { textContent: s.title }),
+      el("small", { className: "mut", textContent: [s.author, t("type." + s.type)].filter(Boolean).join(" · ") }),
+      el("span", { className: "badge b-" + s.status, textContent: t("status." + s.status) }), bar)));
 }
 
 async function source(id) {
@@ -43,10 +49,10 @@ async function source(id) {
   return el("section", {},
     el("h1", { textContent: s.title }),
     el("p", { className: "mut", textContent: [s.author, t("type." + s.type)].filter(Boolean).join(" · ") }),
-    el("div", { className: "row" }, ["want", "reading", "done"].map(st => btn(t("status." + st), () => setStatus(st), "chip" + (st === s.status ? " on" : "")))),
+    el("div", { className: "seg" }, ["want", "reading", "done"].map(st => btn(t("status." + st), () => setStatus(st), "chip" + (st === s.status ? " on" : "")))),
     s.total_pages || s.current_page ? el("p", { textContent: `${t("pages")}: ${s.current_page ?? 0}${s.total_pages ? " / " + s.total_pages : ""}` }) : null,
     s.purpose ? el("div", {}, el("h2", { textContent: s.status === "done" ? t("youHoped") : t("purposeLbl") }), el("blockquote", { textContent: s.purpose })) : null,
-    el("p", { className: "mut", textContent: t("notesSoon") }),
+    el("div", { className: "notes-soon", textContent: t("notesSoon") }),
     el("div", { className: "row" },
       link(t("edit"), "#/form/" + s.id),
       btn(t("del"), async () => { if (confirm(t("confirmDel"))) { await remove("sources", s.id); location.hash = "#/"; } })));
@@ -63,7 +69,7 @@ async function form(id) {
   const tot = el("input", { type: "number", min: 0, value: v.total_pages ?? "" });
   const num = x => x.value === "" ? null : Math.max(0, parseInt(x.value, 10) || 0);
   const f = el("form", { className: "form" }, el("h1", { textContent: t(s ? "editSource" : "newSource") }),
-    field("f.type", type), field("f.title", title), field("f.author", author), field("f.status", status), field("f.purpose", purpose), field("f.cur", cur), field("f.tot", tot),
+    field("f.type", type), field("f.title", title), field("f.author", author), field("f.status", status), field("f.purpose", purpose), el("div", { className: "two" }, field("f.cur", cur), field("f.tot", tot)),
     el("div", { className: "row" }, el("button", { type: "submit", className: "p", textContent: t("save") }), link(t("cancel"), s ? "#/source/" + s.id : "#/")));
   f.onsubmit = async e => {
     e.preventDefault();
@@ -97,6 +103,8 @@ async function render() {
   try { root.replaceChildren(await (pages[page] || library)(id)); }
   catch (e) { root.replaceChildren(el("p", { textContent: "Lỗi hiển thị / Render error: " + e.message })); }
   apply();
+  const on = page === "settings" || page === "login" ? "#/settings" : "#/";
+  document.querySelectorAll("nav a").forEach(a => a.toggleAttribute("aria-current", a.getAttribute("href") === on));
 }
 addEventListener("hashchange", render);
 addEventListener("sync-status", e => {

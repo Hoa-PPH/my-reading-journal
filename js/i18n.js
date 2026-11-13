@@ -14,6 +14,7 @@ const D = {
     "st.signed-out": "Chưa đăng nhập (dữ liệu chỉ lưu trên máy)", "st.offline": "Đang offline, sẽ đồng bộ khi có mạng",
     "st.syncing": "Đang đồng bộ…", "st.synced": "Đã đồng bộ", "st.error": "Lỗi đồng bộ", "st.idle": "",
     signedOutHint: "Chưa đăng nhập, dữ liệu chỉ nằm trên máy này.",
+    emptyTitle: "Kệ sách đang trống", emptyHint: "Thêm cuốn sách, bài báo hay podcast đầu tiên bằng nút phía trên.",
     timeout: "Hết thời gian chờ. Hãy đóng các tab khác của trang này rồi thử lại.",
     checkEmail: "Đã tạo tài khoản. Nếu được yêu cầu, hãy xác nhận email rồi đăng nhập." },
   en: { app: "Reading Journal", "nav.library": "Library", "nav.settings": "Settings",
@@ -30,6 +31,7 @@ const D = {
     "st.signed-out": "Signed out (data stays on this device)", "st.offline": "Offline, will sync when back online",
     "st.syncing": "Syncing…", "st.synced": "Synced", "st.error": "Sync error", "st.idle": "",
     signedOutHint: "Not signed in; data stays on this device.",
+    emptyTitle: "Your shelf is empty", emptyHint: "Add your first book, article or podcast with the button above.",
     timeout: "Timed out. Close other tabs of this page and try again.",
     checkEmail: "Account created. If asked, confirm your email, then sign in." },
 };
