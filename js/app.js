@@ -1,6 +1,7 @@
 import { signIn, signUp, signOut, currentUser } from "./cloud.js";
 import { list, get, save, remove, initSync, sync } from "./store.js";
 import { t, setLang, getLang, apply } from "./i18n.js";
+import { PROMPTS } from "./prompts.js";
 
 const root = document.getElementById("app");
 const today = () => new Date().toISOString().slice(0, 10);
@@ -11,39 +12,133 @@ const link = (text, href, cls = "btn") => el("a", { className: cls, href, textCo
 const sel = (vals, label, cur) => { const s = el("select", {}, vals.map(v => el("option", { value: v, textContent: label(v) }))); s.value = cur; return s; };
 const field = (key, input) => el("label", {}, el("span", { textContent: t(key) }), input);
 const withTimeout = (p, ms = 15000) => Promise.race([p, new Promise(res => setTimeout(() => res({ error: { message: t("timeout") } }), ms))]);
+const SVGNS = "http://www.w3.org/2000/svg";
+const sv = (tag, attrs = {}, ...kids) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); e.append(...kids.flat().filter(x => x != null)); return e; };
 const HUES = [174, 186, 340, 350, 26, 34]; // chỉ dùng tông lam ngọc, hồng, nâu
 const hue = s => HUES[[...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % HUES.length];
 const norm = x => (x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[đĐ]/g, "d").toLowerCase();
 const fmtDate = iso => new Date(iso).toLocaleDateString(getLang() === "vi" ? "vi-VN" : "en-GB");
 const pctOf = s => s.status === "done" ? 100 : s.total_pages ? Math.min(100, Math.round(100 * (s.current_page || 0) / s.total_pages)) : null;
 
-let query = "", sortBy = "updated", filter = "all", sync_state = { state: "signed-out", message: "" };
+let lq = "", nkind = "all", query = "", sortBy = "updated", filter = "all", sync_state = { state: "signed-out", message: "" };
 
 function paintStatus() { const st = document.getElementById("status"); st.dataset.state = sync_state.state; st.textContent = t("st." + sync_state.state) + (sync_state.message ? ": " + sync_state.message : ""); }
 
-async function library() {
-  const items = await list("sources"), notes = await list("notes"), u = await currentUser();
-  const stat = (n, label, c) => { const d = el("div", { className: "stat" }, el("b", { textContent: n }), el("span", { textContent: label })); d.style.setProperty("--c", c); return d; };
-  const count = st => items.filter(x => x.status === st).length;
-  const box = el("div", { className: "table" });
-  const thead = () => el("div", { className: "thead" }, el("span"), el("span", { textContent: t("col.title") }), el("span", { className: "hm", textContent: t("col.type") }), el("span", { textContent: t("col.status") }), el("span", { className: "hm", textContent: t("col.progress") }), el("span", { className: "hm", textContent: t("col.updated") }));
-  const paint = () => {
-    const q = norm(query);
-    const rows = items.filter(s => (filter === "all" || s.status === filter) && (!q || norm(s.title + " " + (s.author || "")).includes(q)));
-    rows.sort(sortBy === "title" ? (a, b) => a.title.localeCompare(b.title, getLang()) : sortBy === "progress" ? (a, b) => (pctOf(b) ?? -1) - (pctOf(a) ?? -1) : (a, b) => b.updated_at.localeCompare(a.updated_at));
-    box.replaceChildren(...(rows.length ? [thead(), ...rows.map(trow)]
-      : [el("div", { className: "empty" }, el("p", { className: "big", textContent: t(items.length ? "noResult" : "emptyTitle") }), el("p", { textContent: items.length ? "" : t("emptyHint") }))]));
+const KINDS = ["insight", "question", "rebuttal", "lesson"], DRAFT = "rj-draft";
+const loadDraft = () => { try { return JSON.parse(localStorage.getItem(DRAFT)) || {}; } catch { return {}; } };
+const saveDraft = d => localStorage.setItem(DRAFT, JSON.stringify(d));
+const pickPrompt = avoid => { const n = PROMPTS.vi.length; let i; do { i = Math.floor(Math.random() * n); } while (n > 1 && i === avoid); return i; };
+const byUpdated = (a, b) => b.updated_at.localeCompare(a.updated_at), byCreated = (a, b) => b.created_at.localeCompare(a.created_at);
+const idMap = list_ => Object.fromEntries(list_.map(x => [x.id, x]));
+const tileEl = s => { const x = el("span", { className: "tile", textContent: [...s.title][0].toUpperCase() }); x.style.setProperty("--h", hue(s.title)); return x; };
+
+// Định dạng nhẹ: **đậm**, *nghiêng*, "- " danh sách, "> " trích dẫn. Dựng bằng DOM + textContent nên không thể chèn mã.
+function inline(text) {
+  const out = [], re = /\*\*(.+?)\*\*|\*(.+?)\*/g; let last = 0, m;
+  while ((m = re.exec(text))) { if (m.index > last) out.push(text.slice(last, m.index)); out.push(m[1] ? el("strong", { textContent: m[1] }) : el("em", { textContent: m[2] })); last = re.lastIndex; }
+  out.push(text.slice(last)); return out;
+}
+function md(text) {
+  const box = el("div", { className: "md" }); let ul = null;
+  for (const line of text.split("\n")) {
+    const li = /^\s*[-*]\s+(.*)/.exec(line);
+    if (li) { if (!ul) box.append(ul = el("ul")); ul.append(el("li", {}, inline(li[1]))); continue; }
+    ul = null;
+    if (/^>\s?/.test(line)) box.append(el("blockquote", {}, inline(line.replace(/^>\s?/, ""))));
+    else if (line.trim()) box.append(el("p", {}, inline(line)));
+  }
+  return box;
+}
+
+async function composer({ sourceId = null, after = render } = {}) {
+  const sources = (await list("sources")).sort((a, b) => (b.status === "reading") - (a.status === "reading") || byUpdated(a, b));
+  const d = loadDraft(), ids = new Set(sources.map(s => s.id));
+  let kind = KINDS.includes(d.kind) ? d.kind : "insight", pi = Number.isInteger(d.pi) ? d.pi : pickPrompt(-1);
+  const first = [sourceId, d.source_id, localStorage.getItem("rj-last-source"), sources.find(s => s.status === "reading")?.id].find(x => x && ids.has(x)) ?? "";
+  const q = el("p", { className: "q", textContent: PROMPTS[getLang()][pi] });
+  const text = el("textarea", { rows: 4, value: d.text || "", placeholder: t("notePh") }); text.setAttribute("aria-label", t("notePh"));
+  const quote = el("textarea", { rows: 2, value: d.quote || "", placeholder: t("quoteLbl") });
+  const page = el("input", { type: "number", min: 0, value: d.page || "", placeholder: t("pageLbl") });
+  const src = el("select", {}, [el("option", { value: "", textContent: t("inbox") }), ...sources.map(s => el("option", { value: s.id, textContent: s.title }))]); src.value = first;
+  const info = el("small", { className: "mut" });
+  const persist = () => { saveDraft({ text: text.value, quote: quote.value, page: page.value, kind, source_id: src.value, pi }); info.textContent = t("draftSaved"); };
+  const chips = el("div", { className: "seg" }, KINDS.map(k => btn(t("kind." + k), () => { kind = k; chips.querySelectorAll(".chip").forEach((c, i) => c.classList.toggle("on", KINDS[i] === k)); persist(); }, "chip" + (k === kind ? " on" : ""))));
+  [text, quote, page].forEach(x => x.oninput = persist); src.onchange = persist;
+  const submit = async () => {
+    const reflection = text.value.trim();
+    if (!reflection) { info.textContent = t("needText"); text.focus(); return; }
+    await save("notes", { source_id: src.value || null, kind, reflection, quote: quote.value.trim() || null, page: page.value === "" ? null : Math.max(0, parseInt(page.value, 10) || 0), prompt_key: "p" + pi });
+    localStorage.setItem("rj-last-source", src.value); localStorage.removeItem(DRAFT);
+    after();
   };
-  const search = el("input", { type: "search", placeholder: t("searchPh"), value: query, oninput: e => { query = e.target.value; paint(); } });
-  const sort = sel(["updated", "title", "progress"], x => t("sort." + x), sortBy);
-  sort.onchange = e => { sortBy = e.target.value; paint(); };
-  paint();
+  text.onkeydown = e => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") submit(); };
+  return el("div", { className: "composer" }, q, btn(t("otherPrompt"), () => { pi = pickPrompt(pi); q.textContent = PROMPTS[getLang()][pi]; persist(); }, "link"),
+    text, el("p", { className: "mut hintm", textContent: t("mdHint") }), chips,
+    el("details", { open: !!(d.quote || d.page) }, el("summary", { textContent: t("moreFields") }), quote, page),
+    el("div", { className: "row" }, src, info, el("button", { type: "button", className: "btn p sp", textContent: t("saveNote"), onclick: submit })));
+}
+
+const assignSel = (n, sources) => { const s = sel(["", ...sources.map(x => x.id)], v => v ? sources.find(x => x.id === v).title : t("assignTo"), ""); s.onchange = async e => { if (e.target.value) { await save("notes", { ...n, source_id: e.target.value }); render(); } }; return s; };
+function noteItem(n, byId, sources = null) {
+  const s = byId[n.source_id];
+  return el("article", { className: "nt" },
+    el("div", { className: "meta" }, el("span", { className: "tag k-" + n.kind, textContent: t("kind." + n.kind) }),
+      s ? link(s.title, "#/source/" + s.id, "") : el("span", { className: "mut", textContent: t("inbox") }),
+      el("span", { className: "mut", textContent: [n.page ? t("pageShort") + " " + n.page : null, fmtDate(n.created_at)].filter(Boolean).join(" · ") })),
+    n.quote ? el("blockquote", { textContent: n.quote }) : null, md(n.reflection),
+    el("div", { className: "row" }, sources ? assignSel(n, sources) : null,
+      btn(t("del"), async () => { if (confirm(t("confirmDelNote"))) { await remove("notes", n.id); render(); } }, "link")));
+}
+
+async function home() {
+  const [sources, notes, u] = await Promise.all([list("sources"), list("notes"), currentUser()]), byId = idMap(sources);
+  const reading = sources.filter(s => s.status === "reading").sort(byUpdated);
+  const week = notes.filter(n => Date.now() - Date.parse(n.created_at) < 6048e5).length, inbox = notes.filter(n => !n.source_id).length;
+  const h = new Date().getHours(), date = new Date().toLocaleDateString(getLang() === "vi" ? "vi-VN" : "en-GB", { weekday: "long", day: "numeric", month: "numeric" });
+  const bk = s => { const p = pctOf(s), fill = el("i"); if (p != null) fill.style.width = p + "%";
+    return el("div", { className: "bk" }, tileEl(s), el("a", { className: "bt", href: "#/source/" + s.id }, el("b", { textContent: s.title }), el("small", { className: "mut", textContent: s.author || "" }), p == null ? null : el("span", { className: "bar" }, fill)), link("+ " + t("addShort"), "#/note/" + s.id, "btn sm")); };
+  const row = (a, b, href) => el("a", { href }, el("span", { textContent: a }), el("b", { textContent: b }));
   return el("section", {},
     u ? null : el("p", { className: "hint" }, t("signedOutHint") + " ", link(t("signIn"), "#/settings", "")),
+    el("div", { className: "head" }, el("div", {}, el("h1", { textContent: t(h < 12 ? "greet.am" : h < 18 ? "greet.pm" : "greet.eve") }), el("span", { className: "mut", textContent: date }))),
+    el("div", { className: "card compose" }, await composer()),
+    el("div", { className: "cols" },
+      el("div", { className: "stack" },
+        el("div", { className: "card" }, el("h2", { textContent: t("f.reading") }), reading.length ? reading.map(bk) : el("p", { className: "mut", textContent: t("noReading") })),
+        el("div", { className: "card" }, el("h2", { textContent: t("recentNotes") }), notes.length ? [...notes].sort(byCreated).slice(0, 4).map(n => noteItem(n, byId)) : el("p", { className: "mut", textContent: t("noNotes") }))),
+      el("div", { className: "card today" }, el("h2", { textContent: t("today") }),
+        row(t("nav.inbox"), `${inbox} ${t("unsorted")}`, "#/inbox"), row(t("thisWeek"), `${week} ${t("stat.notes").toLowerCase()}`, "#/notes"), el("a", { href: "#/" }, el("span", { textContent: t("review") }), el("span", { className: "mut", textContent: t("soon") })))));
+}
+
+async function notePage(id) { return el("section", { className: "narrow" }, el("h1", { textContent: t("newNote") }), el("div", { className: "card compose", style: "margin-top:16px" }, await composer({ sourceId: id || null, after: () => { location.hash = id ? "#/source/" + id : "#/"; } }))); }
+
+async function notesPage(mode) {
+  const [sources, all] = await Promise.all([list("sources"), list("notes")]), byId = idMap(sources);
+  const base = mode === "inbox" ? all.filter(n => !n.source_id) : all, box = el("div", { className: "stack" });
+  const paint = () => { const q = norm(query);
+    const items = base.filter(n => (nkind === "all" || n.kind === nkind) && (!q || norm(n.reflection + " " + (n.quote || "") + " " + (byId[n.source_id]?.title || "")).includes(q))).sort(byCreated);
+    box.replaceChildren(...(items.length ? items.map(n => noteItem(n, byId, mode === "inbox" ? sources : null)) : [el("div", { className: "empty" }, el("p", { className: "big", textContent: t("noNotes") }))])); };
+  const search = el("input", { type: "search", placeholder: t("searchNotes"), value: query, oninput: e => { query = e.target.value; paint(); } });
+  paint();
+  return el("section", { className: "narrow" }, el("div", { className: "head" }, el("h1", { textContent: t(mode === "inbox" ? "nav.inbox" : "nav.notes") }), link(t("quickNote"), "#/note", "btn p")),
+    el("div", { className: "tools" }, search, el("div", { className: "seg" }, ["all", ...KINDS].map(k => btn(t(k === "all" ? "f.all" : "kind." + k), () => { nkind = k; render(); }, "chip" + (k === nkind ? " on" : ""))))), box);
+}
+
+async function library() {
+  const items = await list("sources"), u = await currentUser(), box = el("div", { className: "table" });
+  const thead = () => el("div", { className: "thead" }, el("span"), el("span", { textContent: t("col.title") }), el("span", { className: "hm", textContent: t("col.type") }), el("span", { textContent: t("col.status") }), el("span", { className: "hm", textContent: t("col.progress") }), el("span", { className: "hm", textContent: t("col.updated") }));
+  const paint = () => {
+    const q = norm(lq);
+    const rows = items.filter(s => (filter === "all" || s.status === filter) && (!q || norm(s.title + " " + (s.author || "")).includes(q)));
+    rows.sort(sortBy === "title" ? (a, b) => a.title.localeCompare(b.title, getLang()) : sortBy === "progress" ? (a, b) => (pctOf(b) ?? -1) - (pctOf(a) ?? -1) : byUpdated);
+    box.replaceChildren(...(rows.length ? [thead(), ...rows.map(trow)] : [el("div", { className: "empty" }, el("p", { className: "big", textContent: t(items.length ? "noResult" : "emptyTitle") }), el("p", { textContent: items.length ? "" : t("emptyHint") }))]));
+  };
+  const search = el("input", { type: "search", placeholder: t("searchPh"), value: lq, oninput: e => { lq = e.target.value; paint(); } });
+  const sort = sel(["updated", "title", "progress"], x => t("sort." + x), sortBy); sort.onchange = e => { sortBy = e.target.value; paint(); };
+  paint();
+  return el("section", {}, u ? null : el("p", { className: "hint" }, t("signedOutHint") + " ", link(t("signIn"), "#/settings", "")),
     el("div", { className: "head" }, el("h1", { textContent: t("nav.library") }), link("+ " + t("newSource"), "#/form", "btn p")),
-    el("div", { className: "stats" }, stat(items.length, t("stat.total"), "var(--brown)"), stat(count("reading"), t("f.reading"), "var(--teal)"), stat(count("done"), t("f.done"), "var(--pink)"), stat(notes.length, t("stat.notes"), "var(--teal-d)")),
-    el("div", { className: "tools" }, search, sort, el("div", { className: "seg" }, ["all", "reading", "want", "done"].map(f => btn(t("f." + f), () => { filter = f; render(); }, "chip" + (f === filter ? " on" : ""))))),
-    box);
+    el("div", { className: "tools" }, search, sort, el("div", { className: "seg" }, ["all", "reading", "want", "done"].map(f => btn(t("f." + f), () => { filter = f; render(); }, "chip" + (f === filter ? " on" : ""))))), box);
 }
 function trow(s) {
   const tile = el("span", { className: "tile", textContent: [...s.title][0].toUpperCase() });
@@ -62,16 +157,17 @@ async function source(id) {
   const s = await get("sources", id);
   if (!s || s.deleted_at) return el("p", { textContent: t("notFound") });
   const setStatus = async st => { const p = { ...s, status: st }; if (st === "reading" && !s.started_at) p.started_at = today(); if (st === "done" && !s.finished_at) p.finished_at = today(); await save("sources", p); render(); };
+  const sn = (await list("notes")).filter(n => n.source_id === s.id).sort(byCreated), byId = { [s.id]: s };
   return el("section", { className: "narrow" },
     el("h1", { textContent: s.title }),
     el("p", { className: "mut", textContent: [s.author, t("type." + s.type)].filter(Boolean).join(" · ") }),
     el("div", { className: "seg" }, ["want", "reading", "done"].map(st => btn(t("status." + st), () => setStatus(st), "chip" + (st === s.status ? " on" : "")))),
     s.total_pages || s.current_page ? el("p", { textContent: `${t("pages")}: ${s.current_page ?? 0}${s.total_pages ? " / " + s.total_pages : ""}` }) : null,
     s.purpose ? el("div", {}, el("h2", { textContent: s.status === "done" ? t("youHoped") : t("purposeLbl") }), el("blockquote", { textContent: s.purpose })) : null,
-    el("div", { className: "notes-soon", textContent: t("notesSoon") }),
+    el("div", { className: "card compose" }, await composer({ sourceId: s.id })), el("h2", { textContent: t("nav.notes"), style: "margin-top:22px" }), el("div", { className: "stack" }, sn.length ? sn.map(n => noteItem(n, byId)) : el("p", { className: "mut", textContent: t("noNotes") })),
     el("div", { className: "row" },
       link(t("edit"), "#/form/" + s.id),
-      btn(t("del"), async () => { if (confirm(t("confirmDel"))) { await remove("sources", s.id); location.hash = "#/"; } })));
+      btn(t("del"), async () => { if (confirm(t("confirmDel"))) { await remove("sources", s.id); location.hash = "#/library"; } })));
 }
 
 async function form(id) {
@@ -86,7 +182,7 @@ async function form(id) {
   const num = x => x.value === "" ? null : Math.max(0, parseInt(x.value, 10) || 0);
   const f = el("form", { className: "form narrow" }, el("h1", { textContent: t(s ? "editSource" : "newSource") }),
     field("f.type", type), field("f.title", title), field("f.author", author), field("f.status", status), field("f.purpose", purpose), el("div", { className: "two" }, field("f.cur", cur), field("f.tot", tot)),
-    el("div", { className: "row" }, el("button", { type: "submit", className: "p", textContent: t("save") }), link(t("cancel"), s ? "#/source/" + s.id : "#/")));
+    el("div", { className: "row" }, el("button", { type: "submit", className: "p", textContent: t("save") }), link(t("cancel"), s ? "#/source/" + s.id : "#/library")));
   f.onsubmit = async e => {
     e.preventDefault();
     const p = { type: type.value, title: title.value.trim(), author: author.value.trim() || null, status: status.value, purpose: purpose.value.trim() || null, current_page: num(cur), total_pages: num(tot) };
@@ -113,20 +209,28 @@ async function settings() {
           btn(t("signUp"), async () => { const r = await withTimeout(signUp(email.value.trim(), pw.value)); if (fail(r)) msg.textContent = t("checkEmail"); })), msg));
 }
 
-const pages = { library, source, form, settings, login: settings };
+const pages = { home, library, source, form, settings, login: settings, note: notePage, notes: () => notesPage(), inbox: () => notesPage("inbox") };
+const NAVMAP = { home: "#/", note: "#/", library: "#/library", source: "#/library", form: "#/library", notes: "#/notes", inbox: "#/inbox", settings: "#/settings", login: "#/settings" };
 async function render() {
   const [, page, id] = location.hash.split("/");
-  try { root.replaceChildren(await (pages[page] || library)(id)); }
+  try { root.replaceChildren(await (pages[page] || home)(id)); }
   catch (e) { root.replaceChildren(el("p", { textContent: "Lỗi hiển thị / Render error: " + e.message })); }
   apply();
-  const on = page === "settings" || page === "login" ? "#/settings" : "#/";
-  document.querySelectorAll("nav a").forEach(a => a.toggleAttribute("aria-current", a.getAttribute("href") === on));
+  const on = NAVMAP[page || "home"] ?? "#/";
+  document.querySelectorAll("#nav a").forEach(a => a.toggleAttribute("aria-current", a.getAttribute("href") === on));
+  document.querySelectorAll("[data-lang]").forEach(b => b.toggleAttribute("aria-current", b.dataset.lang === getLang()));
+  const n = (await list("notes")).filter(x => !x.source_id).length, b = document.getElementById("inboxN");
+  b.textContent = n; b.hidden = !n;
 }
+// Không vẽ lại khi bạn đang gõ (nháp vẫn được lưu riêng).
+const softRender = () => { if (!/^(TEXTAREA|INPUT|SELECT)$/.test(document.activeElement?.tagName)) render(); };
 addEventListener("hashchange", render);
 addEventListener("sync-status", e => {
   sync_state = e.detail; paintStatus();
   const page = location.hash.split("/")[1];
-  if (e.detail.state === "synced" && (!page || page === "source")) render(); // không vẽ lại khi đang gõ ở form/cài đặt
+  if (e.detail.state === "synced" && !["form", "note", "settings", "login"].includes(page)) softRender();
 });
-addEventListener("auth-change", () => { setTimeout(sync, 0); const pg = location.hash.split("/")[1]; if (!pg || pg === "source" || pg === "settings") render(); });
+addEventListener("auth-change", () => { setTimeout(sync, 0); const pg = location.hash.split("/")[1]; if (!["form", "note"].includes(pg)) softRender(); });
+document.getElementById("gsearch").onsubmit = e => { e.preventDefault(); query = document.getElementById("gq").value.trim(); if (location.hash === "#/notes") render(); else location.hash = "#/notes"; };
+document.querySelectorAll("[data-lang]").forEach(b => b.onclick = () => { setLang(b.dataset.lang); paintStatus(); render(); });
 apply(); paintStatus(); render(); initSync();

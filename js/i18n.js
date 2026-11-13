@@ -17,6 +17,14 @@ const D = {
     "stat.total": "Tổng nguồn", "stat.notes": "Ghi chép", searchPh: "Tìm theo tên hoặc tác giả…", noResult: "Không có kết quả phù hợp.",
     "sort.updated": "Mới cập nhật", "sort.title": "Tên A–Z", "sort.progress": "Tiến độ",
     "col.title": "Tên", "col.type": "Loại", "col.status": "Trạng thái", "col.progress": "Tiến độ", "col.updated": "Cập nhật",
+    "blk.map": "Tổng quan", "blk.timeline": "Dòng thời gian đọc", "blk.all": "Tất cả nguồn", noReading: "Chưa có cuốn nào đang đọc.",
+    "nav.home": "Trang chủ", "nav.notes": "Ghi chép", "nav.inbox": "Hộp nhận", quickNote: "+ Ghi nhanh", searchGlobal: "Tìm trong ghi chép…", searchNotes: "Tìm trong ghi chép…",
+    "greet.am": "Chào buổi sáng", "greet.pm": "Chào buổi chiều", "greet.eve": "Chào buổi tối",
+    "kind.insight": "Tâm đắc", "kind.question": "Câu hỏi", "kind.rebuttal": "Phản biện", "kind.lesson": "Bài học",
+    inbox: "Hộp nhận", newNote: "Ghi chép mới", otherPrompt: "Đổi câu khác", moreFields: "Trích dẫn, số trang", quoteLbl: "Trích dẫn (tùy chọn)", pageLbl: "Số trang",
+    mdHint: "Gõ **đậm**, *nghiêng*, \"- \" cho danh sách. Ctrl+Enter để lưu.", saveNote: "Lưu ghi chép", needText: "Hãy viết vài dòng trước khi lưu.", draftSaved: "Đã lưu nháp",
+    notePh: "Viết suy nghĩ của bạn…", today: "Hôm nay", thisWeek: "Tuần này", review: "Ôn lại", soon: "Sắp có", recentNotes: "Ghi chép gần đây", addShort: "Ghi", pageShort: "tr.",
+    noNotes: "Chưa có ghi chép nào.", assignTo: "Gắn vào nguồn…", confirmDelNote: "Xóa ghi chép này?", unsorted: "ý chưa phân loại",
     emptyTitle: "Kệ sách đang trống", emptyHint: "Thêm cuốn sách, bài báo hay podcast đầu tiên bằng nút phía trên.",
     timeout: "Hết thời gian chờ. Hãy đóng các tab khác của trang này rồi thử lại.",
     checkEmail: "Đã tạo tài khoản. Nếu được yêu cầu, hãy xác nhận email rồi đăng nhập." },
@@ -37,6 +45,14 @@ const D = {
     "stat.total": "Total sources", "stat.notes": "Notes", searchPh: "Search by title or author…", noResult: "No matching results.",
     "sort.updated": "Recently updated", "sort.title": "Title A–Z", "sort.progress": "Progress",
     "col.title": "Title", "col.type": "Type", "col.status": "Status", "col.progress": "Progress", "col.updated": "Updated",
+    "blk.map": "Overview", "blk.timeline": "Reading timeline", "blk.all": "All sources", noReading: "Nothing in progress yet.",
+    "nav.home": "Home", "nav.notes": "Notes", "nav.inbox": "Inbox", quickNote: "+ Quick note", searchGlobal: "Search notes…", searchNotes: "Search notes…",
+    "greet.am": "Good morning", "greet.pm": "Good afternoon", "greet.eve": "Good evening",
+    "kind.insight": "Insight", "kind.question": "Question", "kind.rebuttal": "Rebuttal", "kind.lesson": "Lesson",
+    inbox: "Inbox", newNote: "New note", otherPrompt: "Another prompt", moreFields: "Quote, page", quoteLbl: "Quote (optional)", pageLbl: "Page",
+    mdHint: "Type **bold**, *italic*, \"- \" for lists. Ctrl+Enter to save.", saveNote: "Save note", needText: "Write a few lines before saving.", draftSaved: "Draft saved",
+    notePh: "Write your thoughts…", today: "Today", thisWeek: "This week", review: "Review", soon: "Coming soon", recentNotes: "Recent notes", addShort: "Note", pageShort: "p.",
+    noNotes: "No notes yet.", assignTo: "Assign to source…", confirmDelNote: "Delete this note?", unsorted: "unsorted",
     emptyTitle: "Your shelf is empty", emptyHint: "Add your first book, article or podcast with the button above.",
     timeout: "Timed out. Close other tabs of this page and try again.",
     checkEmail: "Account created. If asked, confirm your email, then sign in." },
@@ -45,4 +61,4 @@ let lang = localStorage.getItem("rj-lang") || "vi";
 export const getLang = () => lang;
 export const t = k => D[lang][k] ?? D.vi[k] ?? k;
 export function setLang(l) { lang = l; localStorage.setItem("rj-lang", l); document.documentElement.lang = l; apply(); }
-export function apply() { document.querySelectorAll("[data-i18n]").forEach(e => e.textContent = t(e.dataset.i18n)); }
+export function apply() { document.querySelectorAll("[data-i18n]").forEach(e => e.textContent = t(e.dataset.i18n)); document.querySelectorAll("[data-i18n-ph]").forEach(e => e.placeholder = t(e.dataset.i18nPh)); }
